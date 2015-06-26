@@ -6,35 +6,38 @@ The goal is to make a reasonably efficient driver. But also to never miss a
 single message. Most libraries will silently drop "+IPD" from the esp8266,
 when receiving one while doing other things.
 
-End goal example:
+example:
 ```
 #include "esp8266.h"
 
-ESP8266 wifi(ESP_PIN_RX, ESP_PIN_TX, ESP_PIN_RESET);
-uint8_t receive_buf[100];
+SoftwareSerial espconn(ESP_TX, ESP_RX);
+ESP8266 wifi(espconn, ESP_RESET);
+uint8_t buf[100];
 
 setup() {
-  if (!wifi.joinAP("SSID", "PASS")) {
-    Serial.print("wifi error: ");
-    Serial.println(errno);
-  }
-  
-  // setup a receive buffer, so we never have to miss a single message
-  wifi.setReceiveBuffer(buf, sizeof(buf));
-  
-  if (!wifi.tcpOpen("IP", PORT)) {
-    Serial.print("wifi error: ");
-    Serial.println(errno);
-  }
-  
-  int len = wifi.tcpReceive();
-  if (len < 0) {
-    Serial.print("wifi error: ");
-    Serial.prinln(errno);
-  }
-  if (len > 0) {
-    Serial.print("received: ");
-    Serial.write(buf, len);
-  }
+    if (!wifi.joinAP("SSID", "PASS")) {
+        Serial.print("wifi error: ");
+        Serial.println(errno);
+    }
+
+    // setup a receive buffer, so we never have to miss a single message
+    wifi.putPacketBuffer(buf, sizeof(buf));
+
+    if (!wifi.tcpOpen("IP", PORT)) {
+        Serial.print("wifi error: ");
+        Serial.println(errno);
+    }
+}
+
+loop() {
+    // if any bytes are available, take back the buffer, copy it to serial, give it back to the wifi driver
+    int len = wifi.available();
+    if (len > 0) {
+        wifi.takePacketBuffer();
+        Serial.print("received: ");
+        Serial.write(buf, len);
+        wifi.putPacketBuffer(buf, sizeof(buf));
+    }
 }
 ```
+
