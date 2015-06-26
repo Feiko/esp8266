@@ -5,8 +5,16 @@
 #define ETIMEOUT 61
 #define EALREADYCONN 62
 
+#define NL_IPD     0x2B495044UL //toNum('+','I','P','D');
+#define NL_READY   0x64790D0AUL //toNum('d', 'y', '\r', '\n');
+#define NL_OK      0x4F4B0D0AUL //toNum('O','K','\r','\n');
+#define NL_CHANGE  0x6E67650DUL //toNum('n','g','e','\r');
+#define NL_FAIL    0x494C0D0AUL //toNum('I','L','\r','\n');
+#define NL_ERROR   0x4F520D0AUL //toNum('O','R','\r','\n'); 
+#define NL_CONNECT 0x43540D0AUL //toNum('C','T','\r','\n');
+
 uint32_t toNum(char c1, char c2, char c3, char c4) {
-  return ((uint32_t)c1 << 24) | ((uint32_t)c2 << 16) | ((uint32_t)c3 << 8) | ((uint32_t)c4 << 0);
+    return ((uint32_t)c1 << 24) | ((uint32_t)c2 << 16) | ((uint32_t)c3 << 8) | ((uint32_t)c4 << 0);
 }
 
 class ESP8266 {
@@ -103,7 +111,6 @@ void ESP8266::receiveIPD() {
 
 int ESP8266::waitfor(const uint32_t* needles, int len, uint32_t timeout, char prompt) {
     uint32_t start = millis();
-    const uint32_t IPD = toNum('+','I','P','D');
 
     do {
         int len = espconn->available();
@@ -112,7 +119,7 @@ int ESP8266::waitfor(const uint32_t* needles, int len, uint32_t timeout, char pr
             state = state << 8 | c;
             //d += (char)c;
 
-            if (state == IPD) receiveIPD();
+       if (state == NL_IPD) receiveIPD();
             if (prompt && (char)c == prompt) return 0;
             for (int i = 0; i < len; i++) {
                 if (state == needles[i]) return i;
@@ -127,15 +134,15 @@ bool ESP8266::hardwareReset() {
     pinMode(reset_pin, OUTPUT);
     delay(10);
     pinMode(reset_pin, INPUT);
-    const uint32_t needles[] = {toNum('d', 'y', '\r', '\n')};
+    const uint32_t needles[] = {NL_READY};
     if (waitfor(needles, 1, 2000) < 0) return false;
 
     espconn->println(F("ATE0"));
-    const uint32_t needles2[] = {toNum('O','K','\r','\n')};
+    const uint32_t needles2[] = {NL_OK};
     if (waitfor(needles2, 1, 200) < 0) return false;
 
     espconn->println(F("AT+CIPMUX=0"));
-    const uint32_t needles3[] = {toNum('O','K','\r','\n'), toNum('n','g','e','\r')};
+    const uint32_t needles3[] = {NL_OK, NL_CHANGE};
     if (waitfor(needles3, 2, 200) < 0) return false;
 
     return true;
@@ -148,7 +155,7 @@ bool ESP8266::joinAP(const char* ssid, const char* pass) {
     espconn->print(pass);
     espconn->println("\"");
 
-    static uint32_t const needles[] = {toNum('O','K','\r','\n'), toNum('I','L','\r','\n')};
+    static uint32_t const needles[] = {NL_OK, NL_FAIL};
     int status = waitfor(needles, 2, 20000);
     if (status == 0) return true;
     errno = status == 1? EFAIL : ETIMEOUT;
@@ -161,7 +168,7 @@ bool ESP8266::tcpOpen(const char* adress, int port) {
     espconn->print(F("\","));
     espconn->println(port);
 
-    const uint32_t needles[] = {toNum('O','K','\r','\n'), toNum('O','R','\r','\n'), toNum('C','T','\r','\n')};
+    const uint32_t needles[] = {NL_OK, NL_ERROR, NL_CONNECT};
     int status = waitfor(needles, 3, 10000);
     if (status == 0) return true;
     switch (status) {
@@ -175,7 +182,7 @@ bool ESP8266::tcpOpen(const char* adress, int port) {
 bool ESP8266::tcpClose() {
     espconn->println(F("AT+CIPCLOSE"));
 
-    const uint32_t needles[] = {toNum('O','K','\r','\n'), toNum('O','R','\r','\n')};
+    const uint32_t needles[] = {NL_OK, NL_ERROR};
     int status = waitfor(needles, 2, 2000);
     if (status == 0) return true;
     errno = status == 1? EFAIL : ETIMEOUT;
@@ -194,7 +201,7 @@ bool ESP8266::tcpSend(const uint8_t* data, int len) {
     }
     espconn->write(data, len);
 
-    const uint32_t needles2[] = {toNum('O','K','\r','\n'), toNum('O','R','\r','\n')};
+    const uint32_t needles2[] = {NL_OK, NL_ERROR};
     status = waitfor(needles2, 2, 2000);
     if (status == 0) return true;
     errno = status == 1? EFAIL : ETIMEOUT;
