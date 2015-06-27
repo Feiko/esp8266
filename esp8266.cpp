@@ -83,13 +83,14 @@ void ESP8266::receiveIPD() {
 #endif
 }
 
-int ESP8266::waitfor(const uint32_t* needles, int len, uint32_t timeout, char prompt) {
+int ESP8266::waitfor(const uint32_t* needles, int nlen, uint32_t timeout, char prompt, char* rec, int reclen) {
     uint32_t start = millis();
+    int recat = 0;
 
 #ifdef DEBUG
     if (timeout) {
         Serial.print("waitfor: ");
-        Serial.print(len);
+        Serial.print(nlen);
         Serial.print(" ");
         Serial.print(prompt);
         Serial.print(" t=");
@@ -102,13 +103,14 @@ int ESP8266::waitfor(const uint32_t* needles, int len, uint32_t timeout, char pr
         for (int i = 0; i < alen; i++) {
             uint8_t c = espconn->read();
             state = state << 8 | c;
+            if (rec && recat < reclen) rec[recat++] = c;
 #ifdef DEBUG
             Serial.write(c);
 #endif
 
             if (state == NL_IPD) receiveIPD();
-            if (prompt && (uint8_t)prompt == c) return len;
-            for (int i = 0; i < len; i++) {
+            if (prompt && (uint8_t)prompt == c) return nlen;
+            for (int i = 0; i < nlen; i++) {
                 if (state == needles[i]) return i;
             }
         }
@@ -296,5 +298,42 @@ int ESP8266::tcpReceive(uint8_t* data, int len, uint32_t timeout) {
     } while ((uint32_t)(millis() - start) < timeout);
     takePacketBuffer();
     return 0;
+}
+
+static void trimsome(char* str, int strlen) {
+    str[strlen - 1] = 0;
+    for (int i = 0; i < strlen; i++) {
+        if (str[i] <= 32) str[i] = 0;
+    }
+}
+
+bool ESP8266::getVersion(char* str, int len) {
+    str[0] = 0;
+    waitfor(NULL, 0, 0);
+    espconn->println(F("AT+GMR"));
+
+    const uint32_t needles[] = {NL_OK};
+    int res = waitfor(needles, 1, 500, 0, str, len);
+    trimsome(str, len);
+#ifdef DEBUG
+    // remove "AT+GMR\r\n"
+    for (int i = 0; i < len - 9; i++) str[i] = str[i + 9];
+#endif
+    return res == 0;
+}
+
+bool ESP8266::getIP(char* str, int len) {
+    str[0] = 0;
+    waitfor(NULL, 0, 0);
+    espconn->println(F("AT+CIFSR"));
+
+    const uint32_t needles[] = {NL_OK};
+    int res = waitfor(needles, 1, 500, 0, str, len);
+    trimsome(str, len);
+#ifdef DEBUG
+    // remove "AT+CIFSTR\n"
+    for (int i = 0; i < len - 12; i++) str[i] = str[i + 12];
+#endif
+    return res == 0;
 }
 

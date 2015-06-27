@@ -19,7 +19,7 @@ class ESP8266 {
     uint32_t state;
 
     int espconnread();
-    int waitfor(const uint32_t* needles, int len, uint32_t timeout, char prompt=0);
+    int waitfor(const uint32_t* needles, int nlen, uint32_t timeout, char prompt=0, char* rec=NULL, int reclen=0);
     void receiveIPD();
 
     bool joinAP2();
@@ -45,5 +45,8 @@ public:
     int available();
     void putPacketBuffer(uint8_t* packet, int len);
     uint8_t* takePacketBuffer();
+
+    bool getVersion(char* str, int len);
+    bool getIP(char* str, int len);
 };
 
