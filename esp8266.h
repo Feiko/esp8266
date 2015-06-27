@@ -4,10 +4,7 @@
 #include <Stream.h>
 typedef const __FlashStringHelper Fstr;
 
-#define EFAIL 60
-#define ETIMEOUT 61
-#define EALREADYCONN 62
-
+/// a class to manage an esp8266 wireless using AT commands
 class ESP8266 {
     Stream* espconn;
     int8_t reset_pin;
@@ -26,6 +23,8 @@ class ESP8266 {
     int tcpOpen2();
 
 public:
+    /// provide a hardware or software serial in esp
+    /// optionally hook up the reset pin, then hardwareReset() will work
     ESP8266(Stream& esp, int8_t reset_pin=-1);
 
     /// returns 0 on success, negative on error
@@ -51,9 +50,10 @@ public:
     /// returns 0 on success, negative on error
     int tcpSend(const uint8_t* data, int len);
 
-    /// receive data from peer
+    /// receive data from the remote peer
     /// This is the "simple" version, it is better to use putPacket/available/takePacket
-    /// or you might miss data send to you as you are sending data to your peer.
+    /// or there is a risk of loosing data from the peer, if we are sending at the same time.
+    ///
     /// returns the size of the data received, 0 if nothing was received before timeout, or negative on error.
     int tcpReceive(uint8_t* data, int len, uint32_t timeout=0);
 
@@ -64,7 +64,8 @@ public:
     /// give the driver a buffer to copy incoming data to
     void putPacketBuffer(uint8_t* packet, int len);
 
-    /// take back the buffer from the driver, you will have to use putPacketBuffer afterwards
+    /// take back the buffer from the driver, the driver will no longer use the buffer, until putPacketBuffer is called again
+    /// returns the originally set packet buffer
     uint8_t* takePacketBuffer();
 
     /// return 0 on success, negative on error, will fill in str with esp8266 version
