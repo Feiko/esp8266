@@ -5,17 +5,15 @@
 #define ETIMEOUT 61
 #define EALREADYCONN 62
 
-#define NL_IPD     0x2B495044UL //toNum('+','I','P','D');
-#define NL_READY   0x64790D0AUL //toNum('d', 'y', '\r', '\n');
-#define NL_OK      0x4F4B0D0AUL //toNum('O','K','\r','\n');
-#define NL_CHANGE  0x6E67650DUL //toNum('n','g','e','\r');
-#define NL_FAIL    0x494C0D0AUL //toNum('I','L','\r','\n');
-#define NL_ERROR   0x4F520D0AUL //toNum('O','R','\r','\n'); 
-#define NL_CONNECT 0x43540D0AUL //toNum('C','T','\r','\n');
-
-uint32_t toNum(char c1, char c2, char c3, char c4) {
-    return ((uint32_t)c1 << 24) | ((uint32_t)c2 << 16) | ((uint32_t)c3 << 8) | ((uint32_t)c4 << 0);
-}
+// this n function forces to keep these numbers in .text section, not sure why
+static inline uint32_t n(uint32_t n) { return n; }
+#define NL_IPD     n(0x2B495044UL) // "+IPD"
+#define NL_READY   n(0x64790D0AUL) // "dy\r\n"
+#define NL_OK      n(0x4F4B0D0AUL) // "OK\r\n"
+#define NL_CHANGE  n(0x6E67650DUL) // "nge\r"
+#define NL_FAIL    n(0x494C0D0AUL) // "IL\r\n"
+#define NL_ERROR   n(0x4F520D0AUL) // "OR\r\n"
+#define NL_CONNECT n(0x43540D0AUL) // "CT\r\n"
 
 class ESP8266 {
     Stream* espconn;
@@ -155,7 +153,7 @@ bool ESP8266::joinAP(const char* ssid, const char* pass) {
     espconn->print(pass);
     espconn->println("\"");
 
-    static uint32_t const needles[] = {NL_OK, NL_FAIL};
+    const uint32_t needles[] = {NL_OK, NL_FAIL};
     int status = waitfor(needles, 2, 20000);
     if (status == 0) return true;
     errno = status == 1? EFAIL : ETIMEOUT;
