@@ -29,7 +29,7 @@
 #define NL_ERROR   n(0x4F520D0AUL) // "OR\r\n"
 #define NL_CONNECT n(0x43540D0AUL) // "CT\r\n"
 
-// this n function forces to keep these numbers in .text section, not sure why
+// this n function forces to keep these numbers in .text section even when compiled with -Os
 static inline uint32_t n(uint32_t n) { return n; }
 
 
