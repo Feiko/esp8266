@@ -17,12 +17,12 @@ void setup() {
     espconn.begin(9600);
     Serial.begin(9600);
 
-    if (!esp.reset()) {
+    if (esp.reset()) {
         Serial.println(F("wifi reset error"));
         return;
     }
 
-    if (!esp.joinAP(SSID, PASS)) {
+    if (esp.joinAP(SSID, PASS)) {
         Serial.println(F("wifi join error"));
         return;
     }
@@ -31,13 +31,13 @@ void setup() {
     // setup the packet buffer here, so even if the server pushes data on connect, we get to read it
     esp.putPacketBuffer(packetbuffer, sizeof(packetbuffer));
 
-    if (!esp.tcpOpen(HOST, PORT)) {
+    if (esp.tcpOpen(HOST, PORT)) {
         Serial.println(F("tcp open error"));
         return;
     }
     Serial.println("OPENED");
 
-    if (!esp.tcpSend((const uint8_t*)"1337\n", 5)) {
+    if (esp.tcpSend((const uint8_t*)"1337\n", 5)) {
         Serial.println(F("tcp write error"));
         return;
     }

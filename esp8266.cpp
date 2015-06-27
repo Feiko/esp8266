@@ -6,7 +6,6 @@
 
 #include "esp8266.h"
 #include <Arduino.h>
-#include <errno.h>
 
 // This esp8266 implementation reads from the esp8266 serial, and matches its
 // output 4 bytes at the time (uint32_t ESP8266::state), not bothering to
@@ -139,58 +138,55 @@ uint8_t* ESP8266::takePacketBuffer() {
     return ret;
 }
 
-
-bool ESP8266::hardwareReset() {
+int ESP8266::hardwareReset() {
     waitfor(NULL, 0, 0);
     digitalWrite(reset_pin, LOW);
     pinMode(reset_pin, OUTPUT);
     delay(100);
     pinMode(reset_pin, INPUT);
     const uint32_t needles[] = {NL_READY};
-    if (waitfor(needles, 1, 2000) < 0) return false;
+    if (waitfor(needles, 1, 3000) < 0) return -1;
 
 #ifndef DEBUG
     espconn->println(F("ATE0"));
     const uint32_t needles2[] = {NL_OK};
-    if (waitfor(needles2, 1, 200) < 0) return false;
+    if (waitfor(needles2, 1, 200) < 0) return -1;
 #endif
 
     espconn->println(F("AT+CIPMUX=0"));
     const uint32_t needles3[] = {NL_OK, NL_CHANGE};
-    if (waitfor(needles3, 2, 200) < 0) return false;
+    if (waitfor(needles3, 2, 200) < 0) return -1;
 
-    return true;
+    return 0;
 }
 
-bool ESP8266::reset() {
+int ESP8266::reset() {
     waitfor(NULL, 0, 0);
     delay(1000);
     espconn->println(F("AT+RST"));
     const uint32_t needles[] = {NL_READY};
-    if (waitfor(needles, 1, 3000) < 0) return false;
+    if (waitfor(needles, 1, 3000) < 0) return -1;
 
 #ifndef DEBUG
     espconn->println(F("ATE0"));
     const uint32_t needles2[] = {NL_OK};
-    if (waitfor(needles2, 1, 200) < 0) return false;
+    if (waitfor(needles2, 1, 200) < 0) return -1;
 #endif
 
     espconn->println(F("AT+CIPMUX=0"));
     const uint32_t needles3[] = {NL_OK, NL_CHANGE};
-    if (waitfor(needles3, 2, 200) < 0) return false;
+    if (waitfor(needles3, 2, 200) < 0) return -1;
 
-    return true;
+    return 0;
 }
 
-bool ESP8266::joinAP2() {
+int ESP8266::joinAP2() {
     const uint32_t needles[] = {NL_OK, NL_FAIL};
-    int status = waitfor(needles, 2, 20000);
-    if (status == 0) return true;
-    errno = status == 1? EFAIL : ETIMEOUT;
-    return false;
+    int res = waitfor(needles, 2, 20000);
+    return res <= 0? res : -(res + 1);
 }
 
-bool ESP8266::joinAP(const char* ssid, const char* pass) {
+int ESP8266::joinAP(const char* ssid, const char* pass) {
     waitfor(NULL, 0, 0);
     espconn->print(F("AT+CWJAP=\""));
     espconn->print(ssid);
@@ -200,7 +196,7 @@ bool ESP8266::joinAP(const char* ssid, const char* pass) {
     return joinAP2();
 }
 
-bool ESP8266::joinAP(Fstr* ssid, Fstr* pass) {
+int ESP8266::joinAP(Fstr* ssid, Fstr* pass) {
     waitfor(NULL, 0, 0);
     espconn->print(F("AT+CWJAP=\""));
     espconn->print(ssid);
@@ -210,34 +206,27 @@ bool ESP8266::joinAP(Fstr* ssid, Fstr* pass) {
     return joinAP2();
 }
 
-bool ESP8266::leaveAP() {
+int ESP8266::leaveAP() {
     waitfor(NULL, 0, 0);
     espconn->print(F("AT+CWQAP"));
     const uint32_t needles[] = {NL_OK, NL_ERROR};
-    int status = waitfor(needles, 3, 2000);
-    return status == 0;
+    int res = waitfor(needles, 2, 2000);
+    return res <= 0? res : -(res + 1);
 }
 
-bool ESP8266::tcpOpen2() {
+int ESP8266::tcpOpen2() {
     const uint32_t needles[] = {NL_OK, NL_ERROR, NL_CONNECT};
-    int status = waitfor(needles, 3, 2000);
-    if (status != 0) {
-        switch (status) {
-            case 1: errno = EFAIL; break;
-            case 2: errno = EALREADYCONN; break;
-            default: errno = ETIMEOUT;
-        }
-        return false;
+    int res = waitfor(needles, 3, 20000);
+    if (res != 0) {
+        return res <= 0? res : -(res + 1);
     }
 
     const uint32_t needles2[] = {NL_OK, NL_ERROR};
-    status = waitfor(needles2, 2, 20000);
-    if (status == 0) return true;
-    errno = EFAIL;
-    return false;
+    res = waitfor(needles2, 2, 20000);
+    return res <= 0? res : -(res + 10);
 }
 
-bool ESP8266::tcpOpen(const char* adress, int port) {
+int ESP8266::tcpOpen(const char* adress, int port) {
     waitfor(NULL, 0, 0);
     espconn->print(F("AT+CIPSTART=\"TCP\",\""));
     espconn->print(adress);
@@ -246,7 +235,7 @@ bool ESP8266::tcpOpen(const char* adress, int port) {
     return tcpOpen2();
 }
 
-bool ESP8266::tcpOpen(Fstr* adress, int port) {
+int ESP8266::tcpOpen(Fstr* adress, int port) {
     waitfor(NULL, 0, 0);
     espconn->print(F("AT+CIPSTART=\"TCP\",\""));
     espconn->print(adress);
@@ -255,40 +244,35 @@ bool ESP8266::tcpOpen(Fstr* adress, int port) {
     return tcpOpen2();
 }
 
-bool ESP8266::tcpClose() {
+int ESP8266::tcpClose() {
     waitfor(NULL, 0, 0);
     espconn->println(F("AT+CIPCLOSE"));
 
     const uint32_t needles[] = {NL_OK, NL_ERROR};
-    int status = waitfor(needles, 2, 5000);
-    if (status == 0) return true;
-    errno = status == 1? EFAIL : ETIMEOUT;
-    return false;
+    int res = waitfor(needles, 2, 5000);
+    return res <= 0? res : -(res + 1);
 }
 
-bool ESP8266::tcpSend(const uint8_t* data, int len) {
+int ESP8266::tcpSend(const uint8_t* data, int len) {
     waitfor(NULL, 0, 0);
     espconn->print(F("AT+CIPSEND="));
     espconn->println(len);
 
-    int status = waitfor(NULL, 0, 5000, '>');
-    if (status != 0) {
-        errno = ETIMEOUT;
-        return false;
-    }
+    int res = waitfor(NULL, 0, 5000, '>');
+    if (res != 0) return -1;
+
     espconn->write(data, len);
 
     const uint32_t needles2[] = {NL_OK, NL_ERROR};
-    status = waitfor(needles2, 2, 5000);
-    if (status == 0) return true;
-    errno = status == 1? EFAIL : ETIMEOUT;
-    return false;
+    res = waitfor(needles2, 2, 5000);
+    return res <= 0? res : -(res + 1);
 }
 
 int ESP8266::tcpReceive(uint8_t* data, int len, uint32_t timeout) {
     waitfor(NULL, 0, 0);
     uint32_t start = millis();
     putPacketBuffer(data, len);
+
     do {
         int res = available();
         if (res) {
@@ -296,8 +280,9 @@ int ESP8266::tcpReceive(uint8_t* data, int len, uint32_t timeout) {
             return res;
         }
     } while ((uint32_t)(millis() - start) < timeout);
+
     takePacketBuffer();
-    return 0;
+    return 0; // timeout
 }
 
 static void trimsome(char* str, int strlen) {
@@ -307,7 +292,7 @@ static void trimsome(char* str, int strlen) {
     }
 }
 
-bool ESP8266::getVersion(char* str, int len) {
+int ESP8266::getVersion(char* str, int len) {
     str[0] = 0;
     waitfor(NULL, 0, 0);
     espconn->println(F("AT+GMR"));
@@ -319,10 +304,10 @@ bool ESP8266::getVersion(char* str, int len) {
     // remove "AT+GMR\r\n"
     for (int i = 0; i < len - 9; i++) str[i] = str[i + 9];
 #endif
-    return res == 0;
+    return res;
 }
 
-bool ESP8266::getIP(char* str, int len) {
+int ESP8266::getIP(char* str, int len) {
     str[0] = 0;
     waitfor(NULL, 0, 0);
     espconn->println(F("AT+CIFSR"));
@@ -334,6 +319,6 @@ bool ESP8266::getIP(char* str, int len) {
     // remove "AT+CIFSTR\n"
     for (int i = 0; i < len - 12; i++) str[i] = str[i + 12];
 #endif
-    return res == 0;
+    return res;
 }
 

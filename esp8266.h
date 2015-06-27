@@ -22,31 +22,55 @@ class ESP8266 {
     int waitfor(const uint32_t* needles, int nlen, uint32_t timeout, char prompt=0, char* rec=NULL, int reclen=0);
     void receiveIPD();
 
-    bool joinAP2();
-    bool tcpOpen2();
+    int joinAP2();
+    int tcpOpen2();
 
 public:
     ESP8266(Stream& esp, int8_t reset_pin=-1);
 
-    bool hardwareReset();
-    bool reset();
+    /// returns 0 on success, negative on error
+    int hardwareReset();
+    int reset();
 
-    bool joinAP(const char* ssid, const char* pass);
-    bool joinAP(Fstr* ssid, Fstr* pass);
-    bool leaveAP();
+    /// join a wireless network, given the ssid and (clear text) password
+    /// returns 0 on success, negative on error
+    int joinAP(const char* ssid, const char* pass);
+    int joinAP(Fstr* ssid, Fstr* pass);
 
-    bool tcpOpen(const char* adress, int port);
-    bool tcpOpen(Fstr* adress, int port);
-    bool tcpClose();
+    /// returns 0 on success, negative on error
+    int leaveAP();
 
-    bool tcpSend(const uint8_t* data, int len);
+    /// open a connection to a server, given the host and port
+    /// returns 0 on success, -1 on timeout, -2... for other errors
+    int tcpOpen(const char* adress, int port);
+    int tcpOpen(Fstr* adress, int port);
+
+    /// returns 0 on success, negative on error
+    int tcpClose();
+
+    /// returns 0 on success, negative on error
+    int tcpSend(const uint8_t* data, int len);
+
+    /// receive data from peer
+    /// This is the "simple" version, it is better to use putPacket/available/takePacket
+    /// or you might miss data send to you as you are sending data to your peer.
+    /// returns the size of the data received, 0 if nothing was received before timeout, or negative on error.
     int tcpReceive(uint8_t* data, int len, uint32_t timeout=0);
 
+    /// return amount of data available, can be used to poll for data and should be called often
+    /// returns the size of data available, 0 if no data is available, negative if errors have occurred.
     int available();
+
+    /// give the driver a buffer to copy incoming data to
     void putPacketBuffer(uint8_t* packet, int len);
+
+    /// take back the buffer from the driver, you will have to use putPacketBuffer afterwards
     uint8_t* takePacketBuffer();
 
-    bool getVersion(char* str, int len);
-    bool getIP(char* str, int len);
+    /// return 0 on success, negative on error, will fill in str with esp8266 version
+    int getVersion(char* str, int len);
+
+    /// return 0 on success, negative on error, will fill in str with local ip address
+    int getIP(char* str, int len);
 };
 
