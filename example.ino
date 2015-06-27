@@ -16,6 +16,7 @@ uint8_t packetbuffer[100];
 void setup() {
     espconn.begin(9600);
     Serial.begin(9600);
+    Serial.println("START");
 
     int s;
     if ((s = esp.reset())) {
@@ -23,9 +24,10 @@ void setup() {
         Serial.println(s);
         return;
     }
+    Serial.println("RESET");
 
     if ((s = esp.joinAP(SSID, PASS))) {
-        Serial.print(F("wifi join error"));
+        Serial.print(F("wifi join error "));
         Serial.println(s);
         return;
     }
@@ -35,14 +37,14 @@ void setup() {
     esp.putPacketBuffer(packetbuffer, sizeof(packetbuffer));
 
     if ((s = esp.tcpOpen(HOST, PORT))) {
-        Serial.print(F("tcp open error"));
+        Serial.print(F("tcp open error "));
         Serial.println(s);
         return;
     }
     Serial.println("OPENED");
 
     if ((s = esp.tcpSend((const uint8_t*)"1337\n", 5))) {
-        Serial.print(F("tcp write error"));
+        Serial.print(F("tcp write error "));
         Serial.println(s);
         return;
     }
@@ -56,7 +58,7 @@ void loop() {
         Serial.println();
         esp.putPacketBuffer(packetbuffer, sizeof(packetbuffer));
     } else if (len < 0) {
-        Serial.print(F("tcp receive error"));
+        Serial.print(F("tcp receive error "));
         Serial.println(len);
     }
 }
