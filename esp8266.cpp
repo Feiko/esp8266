@@ -144,7 +144,7 @@ bool ESP8266::hardwareReset() {
     waitfor(NULL, 0, 0);
     digitalWrite(reset_pin, LOW);
     pinMode(reset_pin, OUTPUT);
-    delay(10);
+    delay(100);
     pinMode(reset_pin, INPUT);
     const uint32_t needles[] = {NL_READY};
     if (waitfor(needles, 1, 2000) < 0) return false;
