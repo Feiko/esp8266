@@ -2,6 +2,7 @@
 // license: MIT
 
 #include <Stream.h>
+typedef const __FlashStringHelper Fstr;
 
 #define EFAIL 60
 #define ETIMEOUT 61
@@ -21,6 +22,9 @@ class ESP8266 {
     int waitfor(const uint32_t* needles, int len, uint32_t timeout, char prompt=0);
     void receiveIPD();
 
+    bool joinAP2();
+    bool tcpOpen2();
+
 public:
     ESP8266(Stream& esp, int8_t reset_pin=-1);
 
@@ -28,9 +32,11 @@ public:
     bool reset();
 
     bool joinAP(const char* ssid, const char* pass);
+    bool joinAP(Fstr* ssid, Fstr* pass);
     bool leaveAP();
 
     bool tcpOpen(const char* adress, int port);
+    bool tcpOpen(Fstr* adress, int port);
     bool tcpClose();
 
     bool tcpSend(const uint8_t* data, int len);

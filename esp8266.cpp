@@ -13,6 +13,13 @@
 // store the full response in a buffer somewhere. This saves memory and is
 // fast. See ESP8266::waitfor
 
+// Also, it can deal with receiving data at any point in while processing
+// commands, as long as the user has given a PacketBuffer to the driver.
+
+// It would have been better if the esp8266 wouldn't push +IPD, but instead has
+// the other side poll for it. That way the TCP window would shrink to the
+// speed at which your program can process data.
+
 // these are the bytes sequences we are looking for as the various reponses
 // from the esp.
 #define NL_IPD     n(0x2B495044UL) // "+IPD"
@@ -173,6 +180,14 @@ bool ESP8266::reset() {
     return true;
 }
 
+bool ESP8266::joinAP2() {
+    const uint32_t needles[] = {NL_OK, NL_FAIL};
+    int status = waitfor(needles, 2, 20000);
+    if (status == 0) return true;
+    errno = status == 1? EFAIL : ETIMEOUT;
+    return false;
+}
+
 bool ESP8266::joinAP(const char* ssid, const char* pass) {
     waitfor(NULL, 0, 0);
     espconn->print(F("AT+CWJAP=\""));
@@ -180,12 +195,17 @@ bool ESP8266::joinAP(const char* ssid, const char* pass) {
     espconn->print(F("\",\""));
     espconn->print(pass);
     espconn->println("\"");
+    return joinAP2();
+}
 
-    const uint32_t needles[] = {NL_OK, NL_FAIL};
-    int status = waitfor(needles, 2, 20000);
-    if (status == 0) return true;
-    errno = status == 1? EFAIL : ETIMEOUT;
-    return false;
+bool ESP8266::joinAP(Fstr* ssid, Fstr* pass) {
+    waitfor(NULL, 0, 0);
+    espconn->print(F("AT+CWJAP=\""));
+    espconn->print(ssid);
+    espconn->print(F("\",\""));
+    espconn->print(pass);
+    espconn->println("\"");
+    return joinAP2();
 }
 
 bool ESP8266::leaveAP() {
@@ -196,24 +216,41 @@ bool ESP8266::leaveAP() {
     return status == 0;
 }
 
+bool ESP8266::tcpOpen2() {
+    const uint32_t needles[] = {NL_OK, NL_ERROR, NL_CONNECT};
+    int status = waitfor(needles, 3, 2000);
+    if (status != 0) {
+        switch (status) {
+            case 1: errno = EFAIL; break;
+            case 2: errno = EALREADYCONN; break;
+            default: errno = ETIMEOUT;
+        }
+        return false;
+    }
+
+    const uint32_t needles2[] = {NL_OK, NL_ERROR};
+    status = waitfor(needles2, 2, 20000);
+    if (status == 0) return true;
+    errno = EFAIL;
+    return false;
+}
+
 bool ESP8266::tcpOpen(const char* adress, int port) {
     waitfor(NULL, 0, 0);
     espconn->print(F("AT+CIPSTART=\"TCP\",\""));
     espconn->print(adress);
     espconn->print(F("\","));
     espconn->println(port);
+    return tcpOpen2();
+}
 
-    const uint32_t needles[] = {NL_OK, NL_ERROR, NL_CONNECT};
-    int status = waitfor(needles, 3, 10000);
-
-    status = waitfor(needles, 3, 10000);
-    if (status == 0) return true;
-    switch (status) {
-        case 1: errno = EFAIL; break;
-        case 2: errno = EALREADYCONN; break;
-        default: errno = ETIMEOUT;
-    }
-    return false;
+bool ESP8266::tcpOpen(Fstr* adress, int port) {
+    waitfor(NULL, 0, 0);
+    espconn->print(F("AT+CIPSTART=\"TCP\",\""));
+    espconn->print(adress);
+    espconn->print(F("\","));
+    espconn->println(port);
+    return tcpOpen2();
 }
 
 bool ESP8266::tcpClose() {
