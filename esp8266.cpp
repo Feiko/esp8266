@@ -1,12 +1,20 @@
-#include <Stream.h>
+// author: Feiko Gorter, Onne Gorter
+// license: MIT
+
+// comment in to debug the module
+//#define DEBUG 1
+
+#include "esp8266.h"
+#include <Arduino.h>
 #include <errno.h>
 
-#define EFAIL 60
-#define ETIMEOUT 61
-#define EALREADYCONN 62
+// This esp8266 implementation reads from the esp8266 serial, and matches its
+// output 4 bytes at the time (uint32_t ESP8266::state), not bothering to
+// store the full response in a buffer somewhere. This saves memory and is
+// fast. See ESP8266::waitfor
 
-// this n function forces to keep these numbers in .text section, not sure why
-static inline uint32_t n(uint32_t n) { return n; }
+// these are the bytes sequences we are looking for as the various reponses
+// from the esp.
 #define NL_IPD     n(0x2B495044UL) // "+IPD"
 #define NL_READY   n(0x64790D0AUL) // "dy\r\n"
 #define NL_OK      n(0x4F4B0D0AUL) // "OK\r\n"
@@ -15,53 +23,11 @@ static inline uint32_t n(uint32_t n) { return n; }
 #define NL_ERROR   n(0x4F520D0AUL) // "OR\r\n"
 #define NL_CONNECT n(0x43540D0AUL) // "CT\r\n"
 
-class ESP8266 {
-    Stream* espconn;
-    int8_t reset_pin;
+// this n function forces to keep these numbers in .text section, not sure why
+static inline uint32_t n(uint32_t n) { return n; }
 
-    uint8_t* ipdpacket;
-    int ipdlen;
-    int ipdavailable;
-    uint32_t state;
 
-    int espconnread();
-    int waitfor(const uint32_t* needles, int len, uint32_t timeout, char prompt=0);
-    void receiveIPD();
-
-public:
-
-    ESP8266(Stream& esp, int8_t reset_pin=-1) :
-        espconn(&esp), reset_pin(reset_pin), ipdpacket(NULL), ipdlen(0), ipdavailable(0), state(0) { }
-
-    bool hardwareReset();
-    bool joinAP(const char* ssid, const char* pass);
-
-    bool tcpOpen(const char* adress, int port);
-    bool tcpClose();
-
-    bool tcpSend(const uint8_t* data, int len);
-    int tcpReceive(uint8_t* data, int len, uint32_t timeout=0);
-
-    void putPacketBuffer(uint8_t* packet, int len) {
-        ipdpacket = packet;
-        ipdlen = len;
-        ipdavailable = 0;
-    }
-
-    int available() {
-        waitfor(NULL, 0, 1);
-        return ipdavailable;
-    }
-
-    uint8_t* takePacketBuffer() {
-        uint8_t* ret = ipdpacket;
-        ipdpacket = NULL;
-        ipdlen = 0;
-        ipdavailable = 0;
-
-        return ret;
-    }
-};
+ESP8266::ESP8266(Stream& esp, int8_t reset_pin) : espconn(&esp), reset_pin(reset_pin), ipdpacket(NULL), ipdlen(0), ipdavailable(0), state(0) { }
 
 int ESP8266::espconnread() {
     int r = espconn->read();
@@ -101,33 +67,72 @@ void ESP8266::receiveIPD() {
         ipdpacket[ipdavailable] = b;
         ipdavailable += 1;
     }
+
+#ifdef DEBUG
     Serial.print(F("+IPD: "));
     Serial.print(len);
     Serial.print(F(" "));
     Serial.println(ipdavailable);
+#endif
 }
 
 int ESP8266::waitfor(const uint32_t* needles, int len, uint32_t timeout, char prompt) {
     uint32_t start = millis();
 
+#ifdef DEBUG
+    if (timeout) {
+        Serial.print("waitfor: ");
+        Serial.print(len);
+        Serial.print(" ");
+        Serial.print(prompt);
+        Serial.print(" t=");
+        Serial.println(timeout);
+    }
+#endif
+
     do {
-        int len = espconn->available();
-        for(int i = 0; i < len; i++) {
+        int alen = espconn->available();
+        for (int i = 0; i < alen; i++) {
             uint8_t c = espconn->read();
             state = state << 8 | c;
-            //d += (char)c;
+#ifdef DEBUG
+            Serial.write(c);
+#endif
 
-       if (state == NL_IPD) receiveIPD();
-            if (prompt && (char)c == prompt) return 0;
+            if (state == NL_IPD) receiveIPD();
+            if (prompt && (uint8_t)prompt == c) return len;
             for (int i = 0; i < len; i++) {
                 if (state == needles[i]) return i;
             }
         }
-    } while ((uint32_t)(millis() - start) < timeout +80);
+    } while ((uint32_t)(millis() - start) < timeout);
+
     return -1; // timeout
 }
 
+void ESP8266::putPacketBuffer(uint8_t* packet, int len) {
+    ipdpacket = packet;
+    ipdlen = len;
+    ipdavailable = 0;
+}
+
+int ESP8266::available() {
+    if (!ipdavailable) waitfor(NULL, 0, 0);
+    return ipdavailable;
+}
+
+uint8_t* ESP8266::takePacketBuffer() {
+    uint8_t* ret = ipdpacket;
+    ipdpacket = NULL;
+    ipdlen = 0;
+    ipdavailable = 0;
+
+    return ret;
+}
+
+
 bool ESP8266::hardwareReset() {
+    waitfor(NULL, 0, 0);
     digitalWrite(reset_pin, LOW);
     pinMode(reset_pin, OUTPUT);
     delay(10);
@@ -135,9 +140,31 @@ bool ESP8266::hardwareReset() {
     const uint32_t needles[] = {NL_READY};
     if (waitfor(needles, 1, 2000) < 0) return false;
 
+#ifndef DEBUG
     espconn->println(F("ATE0"));
     const uint32_t needles2[] = {NL_OK};
     if (waitfor(needles2, 1, 200) < 0) return false;
+#endif
+
+    espconn->println(F("AT+CIPMUX=0"));
+    const uint32_t needles3[] = {NL_OK, NL_CHANGE};
+    if (waitfor(needles3, 2, 200) < 0) return false;
+
+    return true;
+}
+
+bool ESP8266::reset() {
+    waitfor(NULL, 0, 0);
+    delay(1000);
+    espconn->println(F("AT+RST"));
+    const uint32_t needles[] = {NL_READY};
+    if (waitfor(needles, 1, 3000) < 0) return false;
+
+#ifndef DEBUG
+    espconn->println(F("ATE0"));
+    const uint32_t needles2[] = {NL_OK};
+    if (waitfor(needles2, 1, 200) < 0) return false;
+#endif
 
     espconn->println(F("AT+CIPMUX=0"));
     const uint32_t needles3[] = {NL_OK, NL_CHANGE};
@@ -147,6 +174,7 @@ bool ESP8266::hardwareReset() {
 }
 
 bool ESP8266::joinAP(const char* ssid, const char* pass) {
+    waitfor(NULL, 0, 0);
     espconn->print(F("AT+CWJAP=\""));
     espconn->print(ssid);
     espconn->print(F("\",\""));
@@ -160,7 +188,16 @@ bool ESP8266::joinAP(const char* ssid, const char* pass) {
     return false;
 }
 
+bool ESP8266::leaveAP() {
+    waitfor(NULL, 0, 0);
+    espconn->print(F("AT+CWQAP"));
+    const uint32_t needles[] = {NL_OK, NL_ERROR};
+    int status = waitfor(needles, 3, 2000);
+    return status == 0;
+}
+
 bool ESP8266::tcpOpen(const char* adress, int port) {
+    waitfor(NULL, 0, 0);
     espconn->print(F("AT+CIPSTART=\"TCP\",\""));
     espconn->print(adress);
     espconn->print(F("\","));
@@ -168,6 +205,8 @@ bool ESP8266::tcpOpen(const char* adress, int port) {
 
     const uint32_t needles[] = {NL_OK, NL_ERROR, NL_CONNECT};
     int status = waitfor(needles, 3, 10000);
+
+    status = waitfor(needles, 3, 10000);
     if (status == 0) return true;
     switch (status) {
         case 1: errno = EFAIL; break;
@@ -178,21 +217,22 @@ bool ESP8266::tcpOpen(const char* adress, int port) {
 }
 
 bool ESP8266::tcpClose() {
+    waitfor(NULL, 0, 0);
     espconn->println(F("AT+CIPCLOSE"));
 
     const uint32_t needles[] = {NL_OK, NL_ERROR};
-    int status = waitfor(needles, 2, 2000);
+    int status = waitfor(needles, 2, 5000);
     if (status == 0) return true;
     errno = status == 1? EFAIL : ETIMEOUT;
     return false;
 }
 
 bool ESP8266::tcpSend(const uint8_t* data, int len) {
-    waitfor(NULL, 0, 1); // clear buffer
+    waitfor(NULL, 0, 0);
     espconn->print(F("AT+CIPSEND="));
     espconn->println(len);
 
-    int status = waitfor(NULL, 0, 2000, '>');
+    int status = waitfor(NULL, 0, 5000, '>');
     if (status != 0) {
         errno = ETIMEOUT;
         return false;
@@ -200,13 +240,14 @@ bool ESP8266::tcpSend(const uint8_t* data, int len) {
     espconn->write(data, len);
 
     const uint32_t needles2[] = {NL_OK, NL_ERROR};
-    status = waitfor(needles2, 2, 2000);
+    status = waitfor(needles2, 2, 5000);
     if (status == 0) return true;
     errno = status == 1? EFAIL : ETIMEOUT;
     return false;
 }
 
 int ESP8266::tcpReceive(uint8_t* data, int len, uint32_t timeout) {
+    waitfor(NULL, 0, 0);
     uint32_t start = millis();
     putPacketBuffer(data, len);
     do {
@@ -218,68 +259,5 @@ int ESP8266::tcpReceive(uint8_t* data, int len, uint32_t timeout) {
     } while ((uint32_t)(millis() - start) < timeout);
     takePacketBuffer();
     return 0;
-}
-
-#include <SoftwareSerial.h>
-#define ESP_TX 3
-#define ESP_RX 2
-#define ESP_RESET 4
-
-SoftwareSerial espconn(ESP_TX, ESP_RX);
-ESP8266 esp(espconn, ESP_RESET);
-uint8_t packetbuffer[100];
-
-void setup() {
-    Serial.begin(9600);
-    espconn.begin(9600);
-    Serial.println(F("Hello World"));
-
-    if (!esp.hardwareReset()) {
-        Serial.println(F("wifi reset error"));
-        return;
-    }
-
-    if (!esp.joinAP("SSID", "PASS")) {
-        Serial.print(F("wifi join error: "));
-        Serial.println(errno);
-        return;
-    }
-    Serial.println(F("talk to the esp"));
-
-    esp.putPacketBuffer(packetbuffer, sizeof(packetbuffer));
-
-    if (!esp.tcpOpen("192.168.87.101", 6979)) {
-        Serial.print(F("TCP open error: "));
-        Serial.println(errno);
-        return;
-    }
-    Serial.println(F("esp is ready"));
-
-    if (!esp.tcpSend((const uint8_t*)"1337\n", 5)) {
-        Serial.print(F("TCP write error: "));
-        Serial.println(errno);
-        return;
-    }
-
-    Serial.println(F("tcp is written"));
-}
-
-// the loop function runs over and over again forever
-void loop() {
-    while (true) {
-        int len = esp.available();
-        if (len > 0) {
-            Serial.write(esp.takePacketBuffer(), len);
-            esp.putPacketBuffer(packetbuffer, sizeof(packetbuffer));
-            Serial.println(F("munch munch"));
-        }
-    }
-
-    while (Serial.available()) {
-        espconn.write(Serial.read());
-    }
-    while (espconn.available()) {
-        Serial.write(espconn.read());
-    }
 }
 
